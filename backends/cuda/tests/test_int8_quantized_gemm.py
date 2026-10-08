@@ -457,12 +457,18 @@ class Int8QuantizedGemmNumericsTest(unittest.TestCase):
                                 config=str(config),
                             ):
                                 single = _single_config_kernel(config)
-                                with mock.patch.dict(
-                                    int8_kernel._BUCKET_KERNELS, {bucket: single}
-                                ):
-                                    out = int8_kernel._launch(
-                                        bucket, x, *weights, group_size
-                                    )
+                                try:
+                                    with mock.patch.dict(
+                                        int8_kernel._BUCKET_KERNELS, {bucket: single}
+                                    ):
+                                        out = int8_kernel._launch(
+                                            bucket, x, *weights, group_size
+                                        )
+                                except triton.runtime.errors.OutOfResources:
+                                    # The autotuner drops a config that does not
+                                    # fit the device (e.g. BLOCK_N=8 x 3 stages
+                                    # at K=4096 on a 99 KiB A10G).
+                                    continue
                                 self.assertEqual(out.shape, (bucket, _N))
                                 self.assertEqual(out.dtype, torch.bfloat16)
                                 _check_close(self, out, ref)
